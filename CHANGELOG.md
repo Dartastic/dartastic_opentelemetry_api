@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of order also detaches the attachments made after it, and a detach out
   of order or of a token no longer attached is reported through
   `OTelErrorHandling` and never throws, as context/README.md allows for a
-  wrong call order.
+  wrong call order
+  ([#1](https://github.com/dartastic/dartastic_opentelemetry_api/pull/1)).
 
 ### Removed
 
@@ -46,7 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Context.attach` and `Context.detach`, or `Context.run` and
   `Context.runSync`. With it goes the global context that
   `Context.runIsolate` set on the web, where the computation runs in the
-  calling isolate and that context stayed current after it returned.
+  calling isolate and that context stayed current after it returned
+  ([#1](https://github.com/dartastic/dartastic_opentelemetry_api/pull/1)).
 
 ## [1.0.0-rc.4] - 2026-10-08
 
