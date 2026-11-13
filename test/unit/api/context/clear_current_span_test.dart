@@ -39,8 +39,10 @@ void main() {
       final testKey = OTelAPI.contextKey<String>('test-key');
       final testValue = 'test-value';
 
-      // Set a value in the context (using deprecated setter for now in test)
-      Context.current = Context.current.copyWith(testKey, testValue);
+      // Attach a context carrying the value
+      final token1 =
+          Context.attach(Context.current.copyWith(testKey, testValue));
+      addTearDown(() => Context.detach(token1));
 
       // Create a tracer and span
       final tracer = OTelAPI.tracer('test-tracer');
@@ -68,7 +70,8 @@ void main() {
       });
 
       // Set baggage in the context
-      Context.current = Context.current.withBaggage(baggage);
+      final token2 = Context.attach(Context.current.withBaggage(baggage));
+      addTearDown(() => Context.detach(token2));
 
       // Create a tracer and span
       final tracer = OTelAPI.tracer('test-tracer');

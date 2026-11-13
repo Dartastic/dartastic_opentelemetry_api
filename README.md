@@ -303,6 +303,29 @@ void main() {
 }
 ```
 
+### Making a context current where a Zone cannot reach
+
+A Zone carries a context only to code that runs inside it. A framework
+that captured a Zone earlier and calls back into it runs that callback
+outside your `runSync`, so the callback sees no context. For that case,
+attach the context and detach it in a `finally`:
+
+```dart
+final token = Context.attach(context);
+try {
+  dispatch(event); // callbacks see `context` as Context.current
+} finally {
+  Context.detach(token);
+}
+```
+
+`Context.current` reads the current Zone's context first, then the most
+recently attached one, then `Context.root`. An attached context covers
+only the synchronous code up to its detach and does not follow `await`;
+use `Context.run` for asynchronous work. Detach in reverse order: an
+out-of-order or repeated detach is reported to the error handler and
+never throws.
+
 ### Running traced work in another isolate
 
 Isolates share no mutable state, so context and configuration do not

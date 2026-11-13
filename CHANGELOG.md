@@ -23,6 +23,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0-rc.5-wip]
 
+### Added
+
+- `Context.attach(context)` returns a `ContextToken`, and
+  `Context.detach(token)` restores the context that was current before
+  that attach: the Attach Context and Detach Context operations of
+  context/README.md. An attached context is current for the synchronous
+  code that runs until its detach, including a callback that a framework
+  runs in a Zone it captured earlier, which `Context.run` and
+  `Context.runSync` cannot reach. `Context.current` reads the current
+  Zone's context first, then the most recently attached context, then
+  `Context.root`. An attached context does not follow `await`;
+  `Context.run` carries a context across asynchronous work. A detach out
+  of order also detaches the attachments made after it, and a detach out
+  of order or of a token no longer attached is reported through
+  `OTelErrorHandling` and never throws, as context/README.md allows for a
+  wrong call order.
+
+### Removed
+
+- **BREAKING**: The deprecated `Context.current` setter. Use
+  `Context.attach` and `Context.detach`, or `Context.run` and
+  `Context.runSync`. With it goes the global context that
+  `Context.runIsolate` set on the web, where the computation runs in the
+  calling isolate and that context stayed current after it returned.
+
 ## [1.0.0-rc.4] - 2026-10-08
 
 ### Added
