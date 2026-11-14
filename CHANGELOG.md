@@ -32,7 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code that runs until its detach, including a callback that a framework
   runs in a Zone it captured earlier, which `Context.run` and
   `Context.runSync` cannot reach. `Context.current` reads the current
-  Zone's context first, then the most recently attached context, then
+  Zone's context first, then the most recently attached context, then the
+  context set with the deprecated `Context.current` setter, then
   `Context.root`. An attached context does not follow `await`;
   `Context.run` carries a context across asynchronous work. A detach out
   of order also detaches the attachments made after it, and a detach out
@@ -41,13 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wrong call order
   ([#1](https://github.com/dartastic/dartastic_opentelemetry_api/pull/1)).
 
-### Removed
+### Fixed
 
-- **BREAKING**: The deprecated `Context.current` setter. Use
-  `Context.attach` and `Context.detach`, or `Context.run` and
-  `Context.runSync`. With it goes the global context that
-  `Context.runIsolate` set on the web, where the computation runs in the
-  calling isolate and that context stayed current after it returned
+- `Context.runIsolate` no longer sets the global current context. On the web,
+  where the computation runs in the calling isolate, the context it was
+  given stayed current after it returned. The computation still runs with
+  that context, carried by its Zone
   ([#1](https://github.com/dartastic/dartastic_opentelemetry_api/pull/1)).
 
 ## [1.0.0-rc.4] - 2026-10-08

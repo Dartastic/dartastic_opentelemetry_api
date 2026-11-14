@@ -32,6 +32,9 @@ class Context {
   /// detached, most recent last. Per isolate, like every static.
   static final List<ContextToken> _attached = <ContextToken>[];
 
+  /// The Context set with the deprecated [current] setter.
+  static Context? _currentContext;
+
   /// Cached reference to the OTelFactory for creating contexts.
   static OTelFactory? _otelFactory;
 
@@ -60,14 +63,33 @@ class Context {
   ///    or anything built on them, such as `APITracer.withSpan`);
   /// 2. otherwise, the Context most recently made current by [attach] and
   ///    not yet detached;
-  /// 3. otherwise, [root].
+  /// 3. otherwise, the Context set with the deprecated [current] setter;
+  /// 4. otherwise, [root].
   ///
   /// A Zone context always wins, so a Context made current with [runSync]
   /// inside an attached region is the current one for that computation.
+  /// An attached Context wins over the setter's, and the setter's is current
+  /// again once everything attached is detached.
   static Context get current {
     return Zone.current[_zoneKey] as Context? ??
         (_attached.isEmpty ? null : _attached.last._context) ??
+        _currentContext ??
         Context.root;
+  }
+
+  /// Sets the global current Context.
+  ///
+  /// This updates the global current Context but does not affect
+  /// Zone-specific contexts or attached ones (see [current] for the order).
+  ///
+  /// @deprecated Use [Context.run] or [Context.runSync] to activate a context
+  /// within a [Zone], or [attach] and [detach] where a callback runs outside
+  /// that Zone. Setting this static field is unreliable in complex
+  /// asynchronous workflows as it does not propagate through [Zone]s.
+  @Deprecated(
+      'Use Context.run() or Context.runSync() to ensure correct asynchronous propagation via Zones. This setter will be removed in v1.0.0.')
+  static set current(Context newContext) {
+    _currentContext = newContext;
   }
 
   /// Makes [context] current for the synchronous code that runs until the
@@ -150,13 +172,14 @@ class Context {
     return current.copyWithoutSpan();
   }
 
-  /// Detaches every attached context, so [current] outside a Context Zone
-  /// is [root] again.
+  /// Resets the current context to a new empty context and detaches every
+  /// attached context.
   ///
   /// This is intended for testing purposes only and should not be used in production code.
   @visibleForTesting
   static void resetCurrent() {
     _attached.clear();
+    _currentContext = ContextCreate.create();
   }
 
   /// Resets the root context to a new empty context.

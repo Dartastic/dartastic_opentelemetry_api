@@ -320,7 +320,8 @@ try {
 ```
 
 `Context.current` reads the current Zone's context first, then the most
-recently attached one, then `Context.root`. An attached context covers
+recently attached one, then the context set with the deprecated
+`Context.current` setter, then `Context.root`. An attached context covers
 only the synchronous code up to its detach and does not follow `await`;
 use `Context.run` for asynchronous work. Detach in reverse order: an
 out-of-order or repeated detach is reported to the error handler and

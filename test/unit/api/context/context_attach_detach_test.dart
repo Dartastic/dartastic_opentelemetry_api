@@ -12,6 +12,7 @@ void main() {
   group('Context.attach / Context.detach', () {
     late ContextKey<String> key;
     late List<Object> reported;
+    late Context base;
 
     setUp(() {
       OTelAPI.reset();
@@ -23,6 +24,7 @@ void main() {
       key = OTelAPI.contextKey<String>('attach-test');
       reported = <Object>[];
       OTelAPI.setErrorHandler((error, _) => reported.add(error));
+      base = Context.current;
     });
 
     tearDown(OTelAPI.reset);
@@ -37,7 +39,7 @@ void main() {
       expect(Context.current, same(context));
 
       Context.detach(token);
-      expect(Context.current, same(Context.root));
+      expect(Context.current, same(base));
       expect(reported, isEmpty);
     });
 
@@ -117,7 +119,7 @@ void main() {
       expect(Context.current, same(outer));
 
       Context.detach(outerToken);
-      expect(Context.current, same(Context.root));
+      expect(Context.current, same(base));
       expect(reported, isEmpty);
     });
 
@@ -145,7 +147,7 @@ void main() {
       expect('${reported.last}', contains('not attached'));
 
       Context.detach(outerToken);
-      expect(Context.current, same(Context.root));
+      expect(Context.current, same(base));
       expect(reported, hasLength(2));
     });
 
@@ -165,7 +167,7 @@ void main() {
       expect('${reported.single}', contains('not attached'));
 
       Context.detach(outerToken);
-      expect(Context.current, same(Context.root));
+      expect(Context.current, same(base));
     });
 
     test('a detach with nothing attached is reported and never throws', () {
@@ -173,7 +175,7 @@ void main() {
       Context.detach(token);
 
       Context.detach(token);
-      expect(Context.current, same(Context.root));
+      expect(Context.current, same(base));
       expect(reported, hasLength(1));
     });
 
@@ -218,7 +220,7 @@ void main() {
     test('resetCurrent detaches everything', () {
       Context.attach(contextWith('leaked'));
       Context.resetCurrent();
-      expect(Context.current, same(Context.root));
+      expect(Context.current.get(key), isNull);
     });
   });
 }
