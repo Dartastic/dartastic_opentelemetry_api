@@ -19,7 +19,8 @@ void main() {
     });
 
     test('handles exception in async operation', () async {
-      Context.current = OTelAPI.context();
+      final token1 = Context.attach(OTelAPI.context());
+      addTearDown(() => Context.detach(token1));
       final error = Exception('Test error');
 
       try {
@@ -36,7 +37,8 @@ void main() {
     test('maintains context after exception in nested operations', () async {
       final key = OTelAPI.contextKey<String>('test-key');
       final originalContext = OTelAPI.context().copyWith(key, 'test-value');
-      Context.current = originalContext;
+      final token2 = Context.attach(originalContext);
+      addTearDown(() => Context.detach(token2));
       var operationCount = 0;
 
       try {
@@ -59,7 +61,8 @@ void main() {
 
     test('handles multiple exceptions in parallel operations', () async {
       final context = OTelAPI.context();
-      Context.current = context;
+      final token3 = Context.attach(context);
+      addTearDown(() => Context.detach(token3));
       final futures = <Future<void>>[];
 
       for (var i = 0; i < 3; i++) {
@@ -87,7 +90,8 @@ void main() {
     test('restores context after error in runIsolate', () async {
       final key = OTelAPI.contextKey<String>('test-key');
       final context = OTelAPI.context().copyWith(key, 'test-value');
-      Context.current = context;
+      final token4 = Context.attach(context);
+      addTearDown(() => Context.detach(token4));
 
       await context.run(() async {
         try {
@@ -106,7 +110,9 @@ void main() {
 
     test('handles timeout in async operation with context', () async {
       final key = OTelAPI.contextKey<String>('test-key');
-      Context.current = OTelAPI.context().copyWith(key, 'test-value');
+      final token5 =
+          Context.attach(OTelAPI.context().copyWith(key, 'test-value'));
+      addTearDown(() => Context.detach(token5));
       expect(Context.current.get(key), equals('test-value'));
 
       try {

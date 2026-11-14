@@ -161,13 +161,14 @@ void main() {
       expect(Context.current.span, isNull);
     });
 
-    test('supports explicit context management via deprecated setter', () {
+    test('supports explicit context management via attach', () {
       final tracer = OTelAPI.tracerProvider().getTracer('test-tracer');
       final span = tracer.startSpan('test-span');
 
       final spanContext = Context.current.withSpan(span);
 
-      Context.current = spanContext;
+      final token1 = Context.attach(spanContext);
+      addTearDown(() => Context.detach(token1));
       expect(Context.current.span, equals(span));
     });
 

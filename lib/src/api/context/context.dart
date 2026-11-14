@@ -7,6 +7,7 @@ import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 import '../../factory/otel_factory.dart';
+import '../../util/otel_error_handler.dart';
 import '../../util/otel_log.dart';
 import '../baggage/baggage.dart';
 import '../trace/span.dart';
@@ -27,7 +28,11 @@ class Context {
   /// Holds the singleton root context instance.
   static Context? _rootContext;
 
-  /// Holds the current context for the application.
+  /// The tokens of the contexts made current by [attach] and not yet
+  /// detached, most recent last. Per isolate, like every static.
+  static final List<ContextToken> _attached = <ContextToken>[];
+
+  /// The Context set with the deprecated [current] setter.
   static Context? _currentContext;
 
   /// Cached reference to the OTelFactory for creating contexts.
@@ -50,29 +55,112 @@ class Context {
     return _otelFactory = OTelFactory.getOrCreateDefault();
   }
 
-  /// Gets the current Context from the current Zone, or the global Context if none exists.
+  /// The Context associated with the caller's current execution unit, the
+  /// specification's "Get current Context" operation.
   ///
-  /// The search order is: current Zone, global current Context, root Context.
+  /// The search order is:
+  /// 1. the Context carried by the current [Zone] (set by [run], [runSync]
+  ///    or anything built on them, such as `APITracer.withSpan`);
+  /// 2. otherwise, the Context most recently made current by [attach] and
+  ///    not yet detached;
+  /// 3. otherwise, the Context set with the deprecated [current] setter;
+  /// 4. otherwise, [root].
   ///
-  /// In asynchronous Dart code, the Zone-based context is preferred as it
-  /// propagates correctly across asynchronous boundaries.
+  /// A Zone context always wins, so a Context made current with [runSync]
+  /// inside an attached region is the current one for that computation.
+  /// An attached Context wins over the setter's, and the setter's is current
+  /// again once everything attached is detached.
   static Context get current {
     return Zone.current[_zoneKey] as Context? ??
+        (_attached.isEmpty ? null : _attached.last._context) ??
         _currentContext ??
         Context.root;
   }
 
   /// Sets the global current Context.
   ///
-  /// This updates the global current Context but does not affect Zone-specific contexts.
+  /// This updates the global current Context but does not affect
+  /// Zone-specific contexts or attached ones (see [current] for the order).
   ///
   /// @deprecated Use [Context.run] or [Context.runSync] to activate a context
-  /// within a [Zone]. Setting this static field is unreliable in complex
+  /// within a [Zone], or [attach] and [detach] where a callback runs outside
+  /// that Zone. Setting this static field is unreliable in complex
   /// asynchronous workflows as it does not propagate through [Zone]s.
   @Deprecated(
       'Use Context.run() or Context.runSync() to ensure correct asynchronous propagation via Zones. This setter will be removed in v1.0.0.')
   static set current(Context newContext) {
     _currentContext = newContext;
+  }
+
+  /// Makes [context] current for the synchronous code that runs until the
+  /// returned token is passed to [detach], the specification's
+  /// "Attach Context" operation.
+  ///
+  /// Use it where a callback runs in a [Zone] other than the one that made
+  /// a Context current, for example a framework that calls back into a Zone
+  /// it captured earlier. [run] and [runSync] cannot reach such a callback:
+  /// the callback leaves their Zone. An attached Context is read by
+  /// [current] whenever the current Zone carries no Context of its own.
+  ///
+  /// Always detach in a `finally`:
+  ///
+  /// ```dart
+  /// final token = Context.attach(context);
+  /// try {
+  ///   dispatch(event); // handlers here see `context` as Context.current
+  /// } finally {
+  ///   Context.detach(token);
+  /// }
+  /// ```
+  ///
+  /// **Synchronous only.** An attached Context does not follow `await`.
+  /// The attachment belongs to the isolate, not to a Zone, so it covers
+  /// exactly the code that runs between [attach] and [detach]. Detach
+  /// before yielding to the event loop: anything else the event loop runs
+  /// in the meantime, in a Zone without a Context, would see the attached
+  /// Context as current. A continuation that runs after the detach sees
+  /// the Context of the Zone it runs in. For asynchronous work, carry the
+  /// Context with [run], which Zones propagate across `await`.
+  static ContextToken attach(Context context) {
+    final token = ContextToken._(context);
+    _attached.add(token);
+    return token;
+  }
+
+  /// Restores the Context that was current before [token]'s [attach], the
+  /// specification's "Detach Context" operation.
+  ///
+  /// Detach in the reverse order of attach. The specification lets an
+  /// implementation report a wrong call order, and this one never throws:
+  /// - **Out of order.** When [token] is attached but a later attach is
+  ///   still attached, the later attachments are detached with it, so the
+  ///   Context current before [token]'s attach is current again, and the
+  ///   wrong order is reported through `OTelErrorHandling.report`. Detaching
+  ///   one of those later tokens afterwards is then a stale detach.
+  /// - **Stale.** When [token] is no longer attached (it was detached
+  ///   already, or an out-of-order detach removed it), nothing changes and
+  ///   the stale detach is reported through `OTelErrorHandling.report`.
+  static void detach(ContextToken token) {
+    if (_attached.isNotEmpty && identical(_attached.last, token)) {
+      _attached.removeLast();
+      return;
+    }
+    final index = _attached.lastIndexOf(token);
+    if (index < 0) {
+      OTelErrorHandling.report(
+          StateError('Context.detach: the token is not attached. It was '
+              'detached already, or an out-of-order detach of an earlier '
+              'token detached it. Nothing changed.'),
+          StackTrace.current);
+      return;
+    }
+    final later = _attached.length - index - 1;
+    _attached.removeRange(index, _attached.length);
+    OTelErrorHandling.report(
+        StateError('Context.detach: detached out of order. $later later '
+            'attachment(s) were still attached and were detached with it; '
+            'the Context current before this attach is current again.'),
+        StackTrace.current);
   }
 
   /// Clears the current span from the context.
@@ -84,11 +172,13 @@ class Context {
     return current.copyWithoutSpan();
   }
 
-  /// Resets the current context to a new empty context.
+  /// Resets the current context to a new empty context and detaches every
+  /// attached context.
   ///
   /// This is intended for testing purposes only and should not be used in production code.
   @visibleForTesting
   static void resetCurrent() {
+    _attached.clear();
     _currentContext = ContextCreate.create();
   }
 
@@ -334,7 +424,6 @@ class Context {
                   ),
                 )
               : deserialized;
-      _currentContext = isolateContext;
       _rootContext ??= isolateContext;
 
       // Run the computation in a zone carrying the deserialized context.
@@ -485,4 +574,15 @@ class Context {
       for (final entry in sortedEntries) Object.hash(entry.key, entry.value)
     ]);
   }
+}
+
+/// The handle [Context.attach] returns. Pass it to [Context.detach] to
+/// restore the Context that was current before the attach.
+///
+/// A token is opaque and single-use: detaching it twice is a stale detach.
+final class ContextToken {
+  ContextToken._(this._context);
+
+  /// The Context the attach made current.
+  final Context _context;
 }
